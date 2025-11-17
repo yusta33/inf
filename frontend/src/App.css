@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  background: #1C1C1E;
+  color: #EAEAEA;
+  overflow-x: hidden;
+}
+
+.App {
+  min-height: 100vh;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2C2C2E;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #48484A;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5A5A5C;
+}
+
+/* Gradient Accent */
+.gradient-accent {
+  background: linear-gradient(135deg, #C13584 0%, #E1306C 100%);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #C13584 0%, #E1306C 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Button Styles */
+button {
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Input Styles */
+input, textarea, select {
+  background: #2C2C2E;
+  border: 1px solid #3A3A3C;
+  color: #EAEAEA;
+  border-radius: 8px;
+  padding: 10px 14px;
+  transition: border-color 0.2s;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: #C13584;
+}
+
+/* Card Styles */
+.card {
+  background: #2C2C2E;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #3A3A3C;
+}
+
+/* Status Emojis */
+.status-sent::before { content: '✅'; }
+.status-failed::before { content: '❌'; }
+.status-pending::before { content: '⏳'; }
+.status-positive::before { content: '✅'; }
+.status-negative::before { content: '❌'; }
+.status-neutral::before { content: '⚪'; }
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Chat Bubble */
+.chat-bubble {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  word-wrap: break-word;
+}
+
+.chat-bubble-user {
+  background: #3A3A3C;
+  margin-right: auto;
+}
+
+.chat-bubble-admin {
+  background: linear-gradient(135deg, #C13584 0%, #E1306C 100%);
+  margin-left: auto;
+  color: white;
+}
+
+.phone-highlight {
+  background: rgba(76, 175, 80, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #4CAF50;
+  font-weight: 600;
+}
