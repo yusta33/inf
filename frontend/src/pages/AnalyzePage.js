@@ -10,7 +10,6 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const AnalyzePage = () => {
   const [contacts, setContacts] = useState([]);
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterPlatform, setFilterPlatform] = useState("all");
   const [analyzing, setAnalyzing] = useState(null);
 
   useEffect(() => {
@@ -57,7 +56,6 @@ const AnalyzePage = () => {
 
   const filteredContacts = contacts.filter((c) => {
     if (filterStatus !== "all" && c.classification !== filterStatus) return false;
-    if (filterPlatform !== "all" && c.platform !== filterPlatform) return false;
     return true;
   });
 
@@ -94,17 +92,10 @@ const AnalyzePage = () => {
           </div>
 
           <div className="flex-1">
-            <label className="block text-sm font-medium mb-2">Filter by Platform</label>
-            <Select value={filterPlatform} onValueChange={setFilterPlatform}>
-              <SelectTrigger data-testid="filter-platform" className="w-full bg-[#2C2C2E] border-[#3A3A3C]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#2C2C2E] border-[#3A3A3C]">
-                <SelectItem value="all">All Platforms</SelectItem>
-                <SelectItem value="instagram">📱 Instagram</SelectItem>
-                <SelectItem value="email">📧 Email</SelectItem>
-              </SelectContent>
-            </Select>
+            <label className="block text-sm font-medium mb-2">Platform</label>
+            <div className="px-4 py-3 bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg">
+              <span className="font-medium text-[#C13584]">📱 Instagram Only</span>
+            </div>
           </div>
         </div>
 
@@ -113,8 +104,7 @@ const AnalyzePage = () => {
           <table className="w-full">
             <thead className="bg-[#3A3A3C]">
               <tr>
-                <th className="px-4 py-3 text-left font-semibold">User</th>
-                <th className="px-4 py-3 text-left font-semibold">Platform</th>
+                <th className="px-4 py-3 text-left font-semibold">Instagram User</th>
                 <th className="px-4 py-3 text-left font-semibold">Message</th>
                 <th className="px-4 py-3 text-left font-semibold">Classification</th>
                 <th className="px-4 py-3 text-left font-semibold">Interest Score</th>
@@ -124,7 +114,7 @@ const AnalyzePage = () => {
             <tbody>
               {filteredContacts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
                     No responses to analyze yet
                   </td>
                 </tr>
@@ -136,9 +126,6 @@ const AnalyzePage = () => {
                     className="border-t border-[#3A3A3C] hover:bg-[#3A3A3C] transition-colors"
                   >
                     <td className="px-4 py-3">@{contact.username}</td>
-                    <td className="px-4 py-3">
-                      {contact.platform === "instagram" ? "📱 Instagram" : "📧 Email"}
-                    </td>
                     <td className="px-4 py-3 max-w-xs truncate" title={contact.last_message}>
                       {contact.last_message || "-"}
                     </td>

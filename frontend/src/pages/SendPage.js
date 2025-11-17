@@ -3,7 +3,6 @@ import axios from "axios";
 import { Upload, Send as SendIcon, RefreshCw, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronRight } from "lucide-react";
 import ResetStatusModal from "@/components/ResetStatusModal";
 
@@ -12,15 +11,12 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SendPage = () => {
   const [categories, setCategories] = useState([]);
   const [selectedContacts, setSelectedContacts] = useState([]);
-  const [platform, setPlatform] = useState("instagram");
-  const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [instaUsername, setInstaUsername] = useState("");
   const [instaPassword, setInstaPassword] = useState("");
   const [sending, setSending] = useState(false);
   const [openCategories, setOpenCategories] = useState([]);
   const [showResetModal, setShowResetModal] = useState(false);
-  const [currentCategory, setCurrentCategory] = useState(null);
 
   useEffect(() => {
     loadCategories();
@@ -112,7 +108,7 @@ const SendPage = () => {
       toast.error("Please enter a message");
       return;
     }
-    if (platform === "instagram" && (!instaUsername || !instaPassword)) {
+    if (!instaUsername || !instaPassword) {
       toast.error("Please enter Instagram credentials");
       return;
     }
@@ -121,19 +117,18 @@ const SendPage = () => {
     try {
       const res = await axios.post(`${API}/messages/send`, {
         contact_ids: selectedContacts,
-        platform,
-        subject: platform === "email" ? subject : undefined,
+        platform: "instagram",
         message,
-        instagram_username: platform === "instagram" ? instaUsername : undefined,
-        instagram_password: platform === "instagram" ? instaPassword : undefined,
+        instagram_username: instaUsername,
+        instagram_password: instaPassword,
       });
 
-      const successful = res.data.results.filter((r) => r.status === "success").length;
-      toast.success(`Sent to ${successful}/${selectedContacts.length} contacts`);
+      const successful = res.data.results.filter((r) => r.status === "success" || r.status === "queued").length;
+      toast.success(`Queued ${successful}/${selectedContacts.length} messages`);
       setSelectedContacts([]);
       loadCategories();
     } catch (err) {
-      toast.error("Failed to send messages");
+      toast.error("Failed to send messages: " + (err.response?.data?.error || err.message));
     } finally {
       setSending(false);
     }
@@ -218,7 +213,7 @@ const SendPage = () => {
       {/* Right Panel - Message Composer */}
       <div className="flex-1 p-6 overflow-auto">
         <div className="max-w-3xl mx-auto">
-          <h2 className="text-3xl font-bold mb-6">Bulk Messaging</h2>
+          <h2 className="text-3xl font-bold mb-6">📱 Instagram Bulk Messaging</h2>
 
           {/* Controls */}
           <div className="flex gap-3 mb-6">
@@ -242,40 +237,12 @@ const SendPage = () => {
             </Button>
           </div>
 
-          {/* Platform Selector */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">Platform</label>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setPlatform("instagram")}
-                data-testid="platform-instagram"
-                className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
-                  platform === "instagram"
-                    ? "gradient-accent text-white"
-                    : "bg-[#3A3A3C] hover:bg-[#48484A]"
-                }`}
-              >
-                📱 Instagram
-              </button>
-              <button
-                onClick={() => setPlatform("email")}
-                data-testid="platform-email"
-                className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
-                  platform === "email"
-                    ? "gradient-accent text-white"
-                    : "bg-[#3A3A3C] hover:bg-[#48484A]"
-                }`}
-              >
-                📧 Email
-              </button>
-            </div>
-          </div>
-
           {/* Instagram Credentials */}
-          {platform === "instagram" && (
-            <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="bg-[#2C2C2E] p-4 rounded-lg mb-4 border border-[#3A3A3C]">
+            <h3 className="text-sm font-semibold mb-3 text-[#C13584]">Instagram Credentials</h3>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Instagram Username</label>
+                <label className="block text-sm font-medium mb-2">Username</label>
                 <input
                   type="text"
                   value={instaUsername}
@@ -286,7 +253,7 @@ const SendPage = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Instagram Password</label>
+                <label className="block text-sm font-medium mb-2">Password</label>
                 <input
                   type="password"
                   value={instaPassword}
@@ -297,32 +264,17 @@ const SendPage = () => {
                 />
               </div>
             </div>
-          )}
-
-          {/* Email Subject */}
-          {platform === "email" && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Subject</label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                data-testid="email-subject"
-                placeholder="Enter email subject"
-                className="w-full"
-              />
-            </div>
-          )}
+          </div>
 
           {/* Message */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">Message</label>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">Direct Message</label>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               data-testid="message-body"
-              placeholder="Type your message here..."
-              rows={8}
+              placeholder="Type your Instagram DM here..."
+              rows={10}
               className="w-full resize-none"
             />
           </div>
@@ -368,7 +320,7 @@ const SendPage = () => {
         onClose={() => setShowResetModal(false)}
         onConfirm={handleResetStatus}
         selectedCount={selectedContacts.length}
-        currentCategory={currentCategory}
+        currentCategory={null}
       />
     </div>
   );
