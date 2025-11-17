@@ -59,12 +59,12 @@ const ChatPage = () => {
 
   const highlightPhone = (text) => {
     const phoneRegex = /\b\d{10,}\b/g;
-    if (!phoneRegex.test(text)) return text;
+    const matches = text.match(phoneRegex);
+    if (!matches) return text;
 
     return text.split(phoneRegex).reduce((acc, part, i, arr) => {
       if (i === arr.length - 1) return acc + part;
-      const match = text.match(phoneRegex)[i];
-      return acc + part + `<span class="phone-highlight">${match}</span>`;
+      return acc + part + `<span class="phone-highlight">${matches[i]}</span>`;
     }, "");
   };
 
