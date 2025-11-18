@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -21,6 +21,12 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 import asyncio
 from collections import deque
 import json
+
+# Import authentication module
+from auth.router import create_auth_router
+from auth.dependencies import get_current_user_dependency
+from auth.security import validate_auth_config
+from auth.models import User
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -58,6 +64,9 @@ except Exception as e:
 # Create the main app
 app = FastAPI(title="InboxHub CRM API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
+
+# Create auth dependency for protecting routes
+get_current_user = get_current_user_dependency(db)
 
 # Constants
 RESET_FIELDS = {
@@ -370,9 +379,12 @@ async def process_excel_data(df: pd.DataFrame) -> tuple:
 # ============================================================================
 
 @api_router.post("/excel/import", response_model=ExcelImportResponse)
-async def import_excel(file: UploadFile = File(...)):
-    """Import contacts from Excel file with validation"""
-    logger.info(f"Starting Excel import: {file.filename}")
+async def import_excel(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Import contacts from Excel file with validation (requires authentication)"""
+    logger.info(f"Starting Excel import: {file.filename} by user {current_user.email}")
 
     try:
         # Parse file
@@ -427,9 +439,12 @@ async def get_categories():
         raise HTTPException(500, "Failed to fetch categories")
 
 @api_router.post("/messages/send")
-async def send_messages(req: SendMessageRequest):
-    """Send messages to contacts (adds to queue)"""
-    logger.info(f"Queuing messages for {len(req.contact_ids)} contacts")
+async def send_messages(
+    req: SendMessageRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Send messages to contacts (adds to queue, requires authentication)"""
+    logger.info(f"Queuing messages for {len(req.contact_ids)} contacts by user {current_user.email}")
 
     results = []
 
@@ -636,9 +651,9 @@ async def analyze_message(req: AnalyzeRequest):
         raise HTTPException(500, f"Analysis failed: {str(e)}")
 
 @api_router.get("/conversations")
-async def get_conversations():
-    """Get positive and neutral conversations"""
-    logger.info("Fetching conversations")
+async def get_conversations(current_user: User = Depends(get_current_user)):
+    """Get positive and neutral conversations (requires authentication)"""
+    logger.info(f"Fetching conversations for user {current_user.email}")
     try:
         contacts = await db.contacts.find(
             {"classification": {"$in": ["positive", "neutral"]}},
@@ -703,9 +718,9 @@ async def send_chat_message(contact_id: str, req: SendChatMessageRequest):
         raise HTTPException(500, "Failed to send message")
 
 @api_router.get("/analytics")
-async def get_analytics():
-    """Get analytics data"""
-    logger.info("Fetching analytics")
+async def get_analytics(current_user: User = Depends(get_current_user)):
+    """Get analytics data (requires authentication)"""
+    logger.info(f"Fetching analytics for user {current_user.email}")
 
     try:
         total_contacts = await db.contacts.count_documents({})
@@ -788,9 +803,12 @@ async def reset_selected_contacts(contact_ids: List[str]):
     return result.modified_count
 
 @api_router.post("/contacts/reset-status")
-async def reset_contact_status(req: ResetStatusRequest):
-    """Reset contact status (refactored)"""
-    logger.info(f"Resetting contacts with scope: {req.scope}")
+async def reset_contact_status(
+    req: ResetStatusRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Reset contact status (refactored, requires authentication)"""
+    logger.info(f"Resetting contacts with scope: {req.scope} by user {current_user.email}")
 
     try:
         if req.scope == "all":
@@ -820,8 +838,12 @@ async def reset_contact_status(req: ResetStatusRequest):
         logger.error(f"Reset failed: {str(e)}", exc_info=True)
         raise HTTPException(500, f"Reset failed: {str(e)}")
 
-# Include router
+# Include routers
 app.include_router(api_router)
+
+# Include auth router (with database injected)
+auth_router = create_auth_router(db)
+app.include_router(auth_router, prefix="/api")
 
 # CORS configuration with validation
 cors_origins = os.environ.get('CORS_ORIGINS', '*')
@@ -839,6 +861,14 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Startup event"""
+    # Validate authentication configuration
+    try:
+        validate_auth_config()
+        logger.info("Authentication configuration validated")
+    except ValueError as e:
+        logger.error(f"Authentication configuration error: {str(e)}")
+        raise
+
     logger.info("Application started successfully")
     logger.info(f"MongoDB: {mongo_url}")
     logger.info(f"CORS origins: {cors_origins}")
