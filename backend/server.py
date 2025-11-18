@@ -17,10 +17,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from instagrapi import Client as InstaClient
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 import asyncio
 from collections import deque
-import json
+import random
 
 # Import authentication module
 from auth.router import create_auth_router
@@ -375,6 +374,43 @@ async def process_excel_data(df: pd.DataFrame) -> tuple:
     return categories_map, total_contacts, errors
 
 # ============================================================================
+# SENTIMENT ANALYSIS (NO-OP REPLACEMENT)
+# ============================================================================
+
+def analyze_sentiment_simple(message: str) -> Dict:
+    """
+    Simple sentiment analyzer (replaces LLM integration).
+    Returns a static or simple rule-based classification.
+    """
+    message_lower = message.lower()
+
+    # Simple keyword-based classification
+    positive_keywords = ['great', 'good', 'excellent', 'love', 'amazing', 'awesome', 'interested', 'yes', 'perfect', 'thanks']
+    negative_keywords = ['bad', 'terrible', 'awful', 'hate', 'no', 'not interested', 'stop', 'unsubscribe']
+
+    positive_count = sum(1 for word in positive_keywords if word in message_lower)
+    negative_count = sum(1 for word in negative_keywords if word in message_lower)
+
+    if positive_count > negative_count:
+        classification = "positive"
+        score = min(60 + (positive_count * 10), 95)
+        reason = "Message contains positive keywords"
+    elif negative_count > positive_count:
+        classification = "negative"
+        score = max(40 - (negative_count * 10), 5)
+        reason = "Message contains negative keywords"
+    else:
+        classification = "neutral"
+        score = random.randint(40, 60)
+        reason = "Message appears neutral"
+
+    return {
+        "classification": classification,
+        "score": score,
+        "reason": reason
+    }
+
+# ============================================================================
 # ROUTES
 # ============================================================================
 
@@ -585,41 +621,16 @@ def _send_instagram_dm_sync(username: str, message: str, insta_user: str, insta_
 
 @api_router.post("/messages/analyze")
 async def analyze_message(req: AnalyzeRequest):
-    """Analyze message sentiment"""
+    """Analyze message sentiment (simple rule-based, no LLM)"""
     logger.info(f"Analyzing message for contact {req.contact_id}")
 
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
-        if not api_key:
-            raise HTTPException(500, "AI service not configured")
+        # Use simple sentiment analysis instead of LLM
+        result = analyze_sentiment_simple(req.message)
 
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"analyze-{req.contact_id}",
-            system_message="You are a sentiment analyzer. Classify the message as Positive, Negative, or Neutral and provide an interest score from 0-100. Reply in JSON format: {\"classification\": \"Positive/Negative/Neutral\", \"score\": 0-100, \"reason\": \"brief explanation\"}"
-        ).with_model("openai", "gpt-4o")
-
-        user_message = UserMessage(text=f"Analyze this message: {req.message}")
-        response = await chat.send_message(user_message)
-
-        # Parse response with error handling
-        try:
-            result = json.loads(response)
-            if not isinstance(result, dict):
-                raise ValueError("Response is not a dictionary")
-            if 'classification' not in result or 'score' not in result:
-                raise ValueError("Missing required fields")
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.error(f"Invalid AI response: {response}")
-            raise HTTPException(500, f"Invalid AI response: {str(e)}")
-
-        classification = result['classification'].lower()
-        if classification not in ['positive', 'negative', 'neutral']:
-            classification = 'neutral'
-
-        score = int(result['score'])
-        if score < 0 or score > 100:
-            score = max(0, min(100, score))
+        classification = result['classification']
+        score = result['score']
+        reason = result.get('reason', 'Analyzed using simple rules')
 
         # Update contact
         await db.contacts.update_one(
@@ -642,7 +653,7 @@ async def analyze_message(req: AnalyzeRequest):
         await db.messages.insert_one(message.model_dump())
 
         logger.info(f"Analysis complete: {classification} ({score}/100)")
-        return {"classification": classification, "score": score, "reason": result.get('reason', '')}
+        return {"classification": classification, "score": score, "reason": reason}
 
     except HTTPException:
         raise
