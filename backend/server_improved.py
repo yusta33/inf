@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Request, Depends
+from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -17,15 +17,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from instagrapi import Client as InstaClient
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 import asyncio
 from collections import deque
-import random
-
-# Import authentication module
-from auth.router import create_auth_router
-from auth.dependencies import get_current_user_dependency
-from auth.security import validate_auth_config
-from auth.models import User
+import json
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -63,9 +58,6 @@ except Exception as e:
 # Create the main app
 app = FastAPI(title="InboxHub CRM API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
-
-# Create auth dependency for protecting routes
-get_current_user = get_current_user_dependency(db)
 
 # Constants
 RESET_FIELDS = {
@@ -374,53 +366,13 @@ async def process_excel_data(df: pd.DataFrame) -> tuple:
     return categories_map, total_contacts, errors
 
 # ============================================================================
-# SENTIMENT ANALYSIS (NO-OP REPLACEMENT)
-# ============================================================================
-
-def analyze_sentiment_simple(message: str) -> Dict:
-    """
-    Simple sentiment analyzer (replaces LLM integration).
-    Returns a static or simple rule-based classification.
-    """
-    message_lower = message.lower()
-
-    # Simple keyword-based classification
-    positive_keywords = ['great', 'good', 'excellent', 'love', 'amazing', 'awesome', 'interested', 'yes', 'perfect', 'thanks']
-    negative_keywords = ['bad', 'terrible', 'awful', 'hate', 'no', 'not interested', 'stop', 'unsubscribe']
-
-    positive_count = sum(1 for word in positive_keywords if word in message_lower)
-    negative_count = sum(1 for word in negative_keywords if word in message_lower)
-
-    if positive_count > negative_count:
-        classification = "positive"
-        score = min(60 + (positive_count * 10), 95)
-        reason = "Message contains positive keywords"
-    elif negative_count > positive_count:
-        classification = "negative"
-        score = max(40 - (negative_count * 10), 5)
-        reason = "Message contains negative keywords"
-    else:
-        classification = "neutral"
-        score = random.randint(40, 60)
-        reason = "Message appears neutral"
-
-    return {
-        "classification": classification,
-        "score": score,
-        "reason": reason
-    }
-
-# ============================================================================
 # ROUTES
 # ============================================================================
 
 @api_router.post("/excel/import", response_model=ExcelImportResponse)
-async def import_excel(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
-):
-    """Import contacts from Excel file with validation (requires authentication)"""
-    logger.info(f"Starting Excel import: {file.filename} by user {current_user.email}")
+async def import_excel(file: UploadFile = File(...)):
+    """Import contacts from Excel file with validation"""
+    logger.info(f"Starting Excel import: {file.filename}")
 
     try:
         # Parse file
@@ -475,12 +427,9 @@ async def get_categories():
         raise HTTPException(500, "Failed to fetch categories")
 
 @api_router.post("/messages/send")
-async def send_messages(
-    req: SendMessageRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """Send messages to contacts (adds to queue, requires authentication)"""
-    logger.info(f"Queuing messages for {len(req.contact_ids)} contacts by user {current_user.email}")
+async def send_messages(req: SendMessageRequest):
+    """Send messages to contacts (adds to queue)"""
+    logger.info(f"Queuing messages for {len(req.contact_ids)} contacts")
 
     results = []
 
@@ -621,16 +570,41 @@ def _send_instagram_dm_sync(username: str, message: str, insta_user: str, insta_
 
 @api_router.post("/messages/analyze")
 async def analyze_message(req: AnalyzeRequest):
-    """Analyze message sentiment (simple rule-based, no LLM)"""
+    """Analyze message sentiment"""
     logger.info(f"Analyzing message for contact {req.contact_id}")
 
     try:
-        # Use simple sentiment analysis instead of LLM
-        result = analyze_sentiment_simple(req.message)
+        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        if not api_key:
+            raise HTTPException(500, "AI service not configured")
 
-        classification = result['classification']
-        score = result['score']
-        reason = result.get('reason', 'Analyzed using simple rules')
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"analyze-{req.contact_id}",
+            system_message="You are a sentiment analyzer. Classify the message as Positive, Negative, or Neutral and provide an interest score from 0-100. Reply in JSON format: {\"classification\": \"Positive/Negative/Neutral\", \"score\": 0-100, \"reason\": \"brief explanation\"}"
+        ).with_model("openai", "gpt-4o")
+
+        user_message = UserMessage(text=f"Analyze this message: {req.message}")
+        response = await chat.send_message(user_message)
+
+        # Parse response with error handling
+        try:
+            result = json.loads(response)
+            if not isinstance(result, dict):
+                raise ValueError("Response is not a dictionary")
+            if 'classification' not in result or 'score' not in result:
+                raise ValueError("Missing required fields")
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"Invalid AI response: {response}")
+            raise HTTPException(500, f"Invalid AI response: {str(e)}")
+
+        classification = result['classification'].lower()
+        if classification not in ['positive', 'negative', 'neutral']:
+            classification = 'neutral'
+
+        score = int(result['score'])
+        if score < 0 or score > 100:
+            score = max(0, min(100, score))
 
         # Update contact
         await db.contacts.update_one(
@@ -653,7 +627,7 @@ async def analyze_message(req: AnalyzeRequest):
         await db.messages.insert_one(message.model_dump())
 
         logger.info(f"Analysis complete: {classification} ({score}/100)")
-        return {"classification": classification, "score": score, "reason": reason}
+        return {"classification": classification, "score": score, "reason": result.get('reason', '')}
 
     except HTTPException:
         raise
@@ -662,9 +636,9 @@ async def analyze_message(req: AnalyzeRequest):
         raise HTTPException(500, f"Analysis failed: {str(e)}")
 
 @api_router.get("/conversations")
-async def get_conversations(current_user: User = Depends(get_current_user)):
-    """Get positive and neutral conversations (requires authentication)"""
-    logger.info(f"Fetching conversations for user {current_user.email}")
+async def get_conversations():
+    """Get positive and neutral conversations"""
+    logger.info("Fetching conversations")
     try:
         contacts = await db.contacts.find(
             {"classification": {"$in": ["positive", "neutral"]}},
@@ -729,9 +703,9 @@ async def send_chat_message(contact_id: str, req: SendChatMessageRequest):
         raise HTTPException(500, "Failed to send message")
 
 @api_router.get("/analytics")
-async def get_analytics(current_user: User = Depends(get_current_user)):
-    """Get analytics data (requires authentication)"""
-    logger.info(f"Fetching analytics for user {current_user.email}")
+async def get_analytics():
+    """Get analytics data"""
+    logger.info("Fetching analytics")
 
     try:
         total_contacts = await db.contacts.count_documents({})
@@ -814,12 +788,9 @@ async def reset_selected_contacts(contact_ids: List[str]):
     return result.modified_count
 
 @api_router.post("/contacts/reset-status")
-async def reset_contact_status(
-    req: ResetStatusRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """Reset contact status (refactored, requires authentication)"""
-    logger.info(f"Resetting contacts with scope: {req.scope} by user {current_user.email}")
+async def reset_contact_status(req: ResetStatusRequest):
+    """Reset contact status (refactored)"""
+    logger.info(f"Resetting contacts with scope: {req.scope}")
 
     try:
         if req.scope == "all":
@@ -849,12 +820,8 @@ async def reset_contact_status(
         logger.error(f"Reset failed: {str(e)}", exc_info=True)
         raise HTTPException(500, f"Reset failed: {str(e)}")
 
-# Include routers
+# Include router
 app.include_router(api_router)
-
-# Include auth router (with database injected)
-auth_router = create_auth_router(db)
-app.include_router(auth_router, prefix="/api")
 
 # CORS configuration with validation
 cors_origins = os.environ.get('CORS_ORIGINS', '*')
@@ -872,14 +839,6 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Startup event"""
-    # Validate authentication configuration
-    try:
-        validate_auth_config()
-        logger.info("Authentication configuration validated")
-    except ValueError as e:
-        logger.error(f"Authentication configuration error: {str(e)}")
-        raise
-
     logger.info("Application started successfully")
     logger.info(f"MongoDB: {mongo_url}")
     logger.info(f"CORS origins: {cors_origins}")

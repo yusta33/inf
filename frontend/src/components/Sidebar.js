@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { Send, BarChart3, MessageCircle, TrendingUp } from "lucide-react";
+import UserMenu from "./UserMenu";
 
 const Sidebar = () => {
   const navItems = [
@@ -36,8 +37,13 @@ const Sidebar = () => {
         ))}
       </nav>
 
-      <div className="p-4 border-t border-[#3A3A3C] text-xs text-gray-500">
-        <p>Emergent.ai CRM v1.0</p>
+      <div className="border-t border-[#3A3A3C]">
+        <div className="p-4">
+          <UserMenu />
+        </div>
+        <div className="px-4 pb-4 text-xs text-gray-500">
+          <p>Emergent.ai CRM v2.0</p>
+        </div>
       </div>
     </aside>
   );
